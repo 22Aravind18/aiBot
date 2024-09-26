@@ -1,77 +1,111 @@
-import streamlit as st
-import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
 import numpy as np
 
-# Function to load the Excel file
-def load_data():
-    uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx"])
-    if uploaded_file is not None:
-        df = pd.read_excel(uploaded_file)
-        return df.fillna(0)  # Replace NaN with 0
-    else:
-        st.warning("Please upload an Excel file.")
-        return None
+# Data for bot statuses over time
+times = ['9:00', '9:15', '9:30', '9:45', '10:00', '10:15', '10:30', '10:45', '11:00']
+status_mapping = {
+    1: 'Started',
+    2: 'Running',
+    3: 'Error',
+    4: 'Completed',
+    5: 'Not started'
+}
+bots_status = {
+    'bot1': ['Started', 'Running', 'Running', 'Running', 'Completed'],
+    'bot2': ['Started', 'Running', 'Running', 'Running', 'Running'],
+    'bot3': ['Not started'],
+    'bot4': ['Started', 'Error'],
+    'bot5': ['Started', 'Running', 'Completed'],
+    'bot6': ['Not started', 'Not started', 'Started', 'Running', 'Completed'],
+    'bot7': ['Started', 'Error'],
+    'bot8': ['Not started', 'Started', 'Running', 'Running', 'Running', 'Running', 'Error']
+}
 
-# Load the data
-df = load_data()
+# Status to color mapping
+status_colors = {
+    'Started': 'yellow',
+    'Running': 'blue',
+    'Error': 'red',
+    'Completed': 'green',
+    'Not started': 'gray'
+}
 
-if df is not None:
-    # Define the default color map for different statuses with hex codes
-    default_color_map = {
-        1: "#FFA500",  # orange
-        2: "#FFFF00",  # yellow
-        3: "#FF0000",  # red
-        4: "#008000",  # green
-        5: "#0000FF"   # blue
-    }
+# Convert time to x-axis values (numeric)
+time_values = np.linspace(0, len(times) - 1, 100)  # More points for smoother animation
 
-    # Bot selection
-    st.header("Bot Lifecycle Visualization")
-    selected_bots = st.multiselect("Select Bots:", options=df['bot/time'].unique(), default=df['bot/time'].unique())
+# Set up the figure and axis
+fig, ax = plt.subplots()
 
-    # Color selection for statuses
-    st.subheader("Color Selection for Statuses")
-    color_map = {}
-    for status in default_color_map.keys():
-        color = st.color_picker(f'Select color for status {status}', default_color_map[status])
-        color_map[status] = color
+ax.set_xticks(np.arange(len(times)))
+ax.set_xticklabels(times)
+ax.set_yticks(np.arange(len(bots_status)))
+ax.set_yticklabels(bots_status.keys())
+ax.set_xlim(0, len(times) - 1)
+ax.set_ylim(-0.5, len(bots_status) - 0.5)
+ax.set_xlabel('Time')
+ax.set_ylabel('Bots')
+fig.patch.set_facecolor('#f5f5f5')
 
-    # Adjustable line height
-    line_height = st.slider("Select line height", 0.01, 0.1, 0.03)
+# Initialize an empty line object for each bot
+lines = []
+for i in range(len(bots_status)):
+    line, = ax.plot([], [], lw=2)  # Initial line without markers
+    lines.append(line)
 
-    # Filter the DataFrame based on selected bots
-    filtered_df = df[df['bot/time'].isin(selected_bots)]
+# Function to find the start time of each bot
+def find_start_time(statuses):
+    for i, status in enumerate(statuses):
+        if status != 'Not started':
+            return i
+    return len(statuses)  # If all statuses are "Not started"
 
-    # Create a plot
-    fig, ax = plt.subplots(figsize=(10, 6))
+# Function to update each bot's line for the current frame
+def update(frame):
+    for i, (bot, statuses) in enumerate(bots_status.items()):
+        x_data = []
+        y_data = []
+        colors = []
 
-    # Plot each selected bot's lifecycle using thinner horizontal bars
-    for i, bot in enumerate(filtered_df['bot/time']):
-        for time in filtered_df.columns[1:]:  # time columns only
-            status = filtered_df.loc[i, time]
-            if status in color_map:
-                start_time = list(filtered_df.columns[1:]).index(time)  # Get the numerical time for start
-                ax.broken_barh([(start_time, 1)], (i - line_height / 2, line_height), facecolors=color_map[status])
-                # Tooltip with status value
-                ax.text(start_time + 0.5, i, str(status), ha='center', va='center', color='white', fontsize=8)
+        # Calculate the percentage of completion based on the frame
+        total_time_points = len(time_values)
+        time_progress = frame / total_time_points * (len(times) - 1)  # Progress in time units
 
-    # Set X-axis labels as the actual time intervals
-    ax.set_xticks(range(len(filtered_df.columns[1:])))
-    ax.set_xticklabels(filtered_df.columns[1:])
+        # Find the bot's actual start time
+        start_time_index = find_start_time(statuses)
 
-    # Set Y-axis labels to the bot names
-    ax.set_yticks(range(len(filtered_df)))
-    ax.set_yticklabels(filtered_df['bot/time'])
+        # Determine the current status for each bot based on time progress
+        current_index = int(time_progress)
 
-    # Set labels and title
-    ax.set_xlabel('Time')
-    ax.set_title('Bot Lifecycle Visualization')
+        # Only start drawing the line after the bot has started
+        if current_index >= start_time_index:
+            # Loop through each time period up to the current frame
+            for j in range(start_time_index, current_index + 1):
+                # Check if the current index exceeds the length of the bot's statuses
+                if j >= len(statuses):
+                    break  # Stop the line here if no more status values exist
 
-    # Display the plot in Streamlit
-    st.pyplot(fig)
+                x_data.append(j)  # Time values on the x-axis
+                y_data.append(i)  # Bot index on the y-axis
+                colors.append(status_colors[statuses[j]])  # Get color for the current status
 
-    # Summary of selected bots
-    st.subheader("Summary of Selected Bots:")
-    for bot in selected_bots:
-        st.write(bot)
+            # Now add the segment currently in progress, if within bounds
+            if current_index < len(times) - 1 and current_index < len(statuses):
+                x_data.append(time_progress)
+                y_data.append(i)
+                colors.append(status_colors[statuses[current_index]])  # Use current status color
+
+            # Create a multi-colored line by breaking the segments based on status changes
+            for k in range(len(x_data) - 1):
+                ax.plot([x_data[k], x_data[k + 1]], [y_data[k], y_data[k + 1]], color=colors[k], lw=2)
+
+            # Set the data for the line object
+            lines[i].set_data(x_data, y_data)
+
+    return lines
+
+# Create the animation
+ani = FuncAnimation(fig, update, frames=len(time_values), blit=False, interval=50, repeat=False)
+
+# Display the animation
+plt.show()
